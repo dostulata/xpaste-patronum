@@ -1,0 +1,25 @@
+---
+#- hosts: centos_dev
+- hosts: centos_clean
+  become: true
+  vars:
+    app_name: "xpaste"
+    db_host: "127.0.0.1"
+    db_port: "5432"
+    db_name: "xpaste_db"
+    db_user: "johndoe"
+    db_password: "12345"
+    secret_key_base: "nowaynotpossible"
+    rails_log_to_stdout: "1"
+    rails_env: "production"
+  roles:
+    - role: pg_sql
+    - role: xpaste
+    - role: geerlingguy.nginx
+  tasks:
+    - name: "Replace nginx.conf with required one"
+      ansible.builtin.copy:
+        remote_src: true
+        src: /root/xpaste_practicum/config/nginx.conf
+        dest: /etc/nginx/nginx.conf
+      notify: restart nginx

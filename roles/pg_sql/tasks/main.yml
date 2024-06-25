@@ -1,0 +1,59 @@
+- name: "Install required packages for PostgreSQL"
+  ansible.builtin.yum:
+    name: "{{ packages_present }}"
+    state: present
+
+- name: "Check if we need to initialize PostgreSQL"
+  ansible.builtin.stat:
+    path: "{{ pg_hba_conf_path }}"
+  register: pg_hba
+
+- name: "Initialize PostgreSQL"
+  shell: "postgresql-setup initdb"
+  when: not pg_hba.stat.exists
+
+- name: "Start and enable services"
+  ansible.builtin.service:
+    name: postgresql
+    state: started
+    enabled: true
+
+- name: "Create app database"
+  community.general.postgresql_db:
+    name: "{{ db_name }}"
+    state: present
+  become: yes
+  become_user: postgres
+
+- name: "Create db user"
+  postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    state: present
+  become: yes
+  become_user: postgres
+
+- name: "Grant db user access to app db"
+  postgresql_privs:
+    type: database
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    grant_option: no
+    privs: all
+  become: yes
+  become_user: postgres
+
+- name: "Allow md5 connection for the db user"
+  postgresql_pg_hba:
+    dest: "~/data/pg_hba.conf"
+    contype: host
+    databases: all
+    method: md5
+    users: "{{ db_user }}"
+    create: true
+  become: yes
+  become_user: postgres
+  notify: restart postgres
+
+- name: Flush handlers
+  meta: flush_handlers

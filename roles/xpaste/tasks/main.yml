@@ -1,0 +1,103 @@
+- name: "Install system packages for app building and ruby"
+  ansible.builtin.yum:
+    name: "{{ sys_dependencies }}"
+    state: present
+
+# rvm has kinda shell'ish installation procedure, so we need these two checks for idempotency reasons
+- name: "Get currently installed ruby version"
+  command: ruby -v
+  register: result
+  ignore_errors: true
+
+- name: "check"
+  debug:
+    msg: "{{ result }}"
+# Must do smth with this info about ruby -- what if ruby is installed and has required version?
+
+- name: "Check if rvm is installed"
+  command: /usr/local/rvm/bin/rvm -v
+  register: rvm_result
+  ignore_errors: true
+
+- block:
+    - name: "Get and install keys for rvm"
+      shell: curl -sSL https://rvm.io/"{{ item }}" | gpg2 --import -
+      args:
+        warn: false # Ansible does not like curl, but I was unable to find module for getting stuff and importing it into gpg2 -- maybe via temp file? Supress warns for now.
+      with_items:
+        - "mpapis.asc"
+        - "pkuczynski.asc"
+
+    - name: "Get rvm"
+      shell: curl -L get.rvm.io | bash -s stable
+      args:
+        warn: false
+
+    - name: "Load rvm environment"
+      shell: source /etc/profile.d/rvm.sh && /usr/local/rvm/bin/rvm reload
+
+    - name: "Check and install rvm dependencies"
+      shell: "/usr/local/rvm/bin/rvm requirements run"
+
+    - name: "Install required ruby version"
+      shell: /usr/local/rvm/bin/rvm install 2.5.1
+
+    - name: "Remove centos ruby binary"
+      ansible.builtin.file:
+        path: /usr/bin/ruby
+        state: absent
+
+    - name: "Create a symlink for required ruby version in rvm environment"
+      ansible.builtin.file:
+        dest: /usr/bin/ruby
+        src: /usr/local/rvm/rubies/ruby-2.5.1/bin/ruby
+        state: link
+  when: rvm_result.rc != 0
+
+- name: "Bring on the racer -- it won't run migrations without it"
+  lineinfile:
+    path: /root/xpaste_practicum/Gemfile
+    regexp: "gem 'therubyracer', platforms: :ruby"
+    line: "gem 'therubyracer', platforms: :ruby"
+
+# No need to do this every time, some check must be here
+- name: "Configure some Japanese stuff"
+  shell: /usr/local/rvm/bin/rvm all do bundle config build.nokogiri --use-system-libraries
+  args:
+    chdir: /root/xpaste_practicum
+  # There is ansible module for bundler, but to use it one need to understand a tiny bit about ruby which I'm not
+
+# No need to do this every time, some check must be here
+- name: "Build stuff from Gemfile"
+  shell: /usr/local/rvm/bin/rvm all do bundle install --clean --force --no-cache --without development
+  args:
+    chdir: /root/xpaste_practicum
+
+# No need to do this every time, some check must be here
+- name: "Run migrations"
+  shell: /usr/local/rvm/bin/rvm all do bundle exec rake db:migrate
+  args:
+    chdir: /root/xpaste_practicum
+  environment:
+    RAILS_ENV: "{{ rails_env }}"
+    SECRET_KEY_BASE: "{{ secret_key_base }}"
+    RAILS_LOG_TO_STDOUT: "{{ rails_log_to_stdout }}"
+    DB_HOST: "{{ db_host }}"
+    DB_PORT: "{{ db_port }}"
+    DB_NAME: "{{ db_name }}"
+    DB_USER: "{{ db_user }}"
+    DB_PASSWORD: "{{ db_password }}"
+
+- name: "Create service file for mega-app"
+  template:
+    src: xpaste.j2
+    dest: /etc/systemd/system/xpaste.service
+    owner: root
+    mode: 0644
+
+- name: "Setting paa service to autostart"
+  systemd:
+    name: xpaste
+    enabled: yes
+    state: restarted
+    daemon_reload: yes

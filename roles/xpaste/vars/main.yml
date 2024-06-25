@@ -1,0 +1,22 @@
+sys_dependencies:
+  - libxml2-devel
+  - libxslt
+  - libxslt-devel
+  - postgresql-devel
+  - which
+  - gcc-c++
+  - patch
+  - readline
+  - readline-devel
+  - zlib
+  - zlib-devel
+  - libffi-devel
+  - openssl-devel
+  - make
+  - bzip2
+  - autoconf
+  - automake
+  - libtool
+  - bison
+  - sqlite-devel
+#gem_dependencies:
